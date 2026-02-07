@@ -575,9 +575,9 @@ cdef class BacktestEngine:
             If the `reduce_only` execution instruction on orders will be honored.
         use_message_queue : bool, default True
             If an internal message queue should be used to process trading commands in sequence after
-            they have initially arrived. Setting this to False would be appropriate for real-time
-            sandbox environments, where we don't want to introduce additional latency of waiting for
-            the next data event before processing the trading command.
+            they have initially arrived. This parameter is overridden by `allow_immediate_quote_execution`
+            in the engine config: when `allow_immediate_quote_execution=True`, `use_message_queue=False`
+            automatically.
         use_market_order_acks : bool, default False
             If OrderAccepted events will be generated for market orders before filling.
         bar_execution : bool, default True
@@ -643,6 +643,10 @@ cdef class BacktestEngine:
             else:
                 default_leverage = Decimal(1)
 
+        # Set use_message_queue based on allow_immediate_quote_execution config
+        # When immediate execution is enabled, disable message queue
+        effective_use_message_queue = use_message_queue and not self._config.allow_immediate_quote_execution
+
         exchange = SimulatedExchange(
             venue=venue,
             oms_type=oms_type,
@@ -669,7 +673,7 @@ cdef class BacktestEngine:
             use_position_ids=use_position_ids,
             use_random_ids=use_random_ids,
             use_reduce_only=use_reduce_only,
-            use_message_queue=use_message_queue,
+            use_message_queue=effective_use_message_queue,
             use_market_order_acks=use_market_order_acks,
             bar_execution=bar_execution,
             bar_adaptive_high_low_ordering=bar_adaptive_high_low_ordering,
@@ -1563,6 +1567,7 @@ cdef class BacktestEngine:
         else:
             self._last_ns = start_ns
 
+        cdef bint allow_immediate_quote_execution_config = self._config.allow_immediate_quote_execution
         try:
             while True:
                 if data is None:
@@ -1582,6 +1587,10 @@ cdef class BacktestEngine:
                     self._last_ns = data.ts_init
                     raw_handlers = self._advance_time(data.ts_init)
                     raw_handlers_count = raw_handlers.len
+
+                allow_immediate_quote_execution = allow_immediate_quote_execution_config and isinstance(data, QuoteTick)
+                if allow_immediate_quote_execution:
+                    self._data_engine.process(data)
 
                 # Process data through exchange
                 if isinstance(data, Instrument):
@@ -1612,7 +1621,8 @@ cdef class BacktestEngine:
                     exchange = self._venues[data.instrument_id.venue]
                     exchange.process_instrument_status(data)
 
-                self._data_engine.process(data)
+                if not allow_immediate_quote_execution:
+                    self._data_engine.process(data)
 
                 # Process all exchange messages
                 for exchange in self._venues.values():
@@ -3543,7 +3553,15 @@ cdef class SimulatedExchange:
         cdef Instrument instrument
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(command.instrument_id)
         if matching_engine is None:
-            raise RuntimeError(f"Cannot process command: no matching engine for {command.instrument_id}")
+            # Try to get instrument from cache and add it to the exchange
+            instrument = self.cache.instrument(command.instrument_id)
+            if instrument is not None:
+                self._log.info(f"Auto-adding instrument {command.instrument_id} to exchange (no matching engine found)")
+                self.add_instrument(instrument)
+                matching_engine = self._matching_engines.get(command.instrument_id)
+
+            if matching_engine is None:
+                raise RuntimeError(f"Cannot process command: no matching engine for {command.instrument_id}")
 
         cdef:
             Order order
@@ -5450,6 +5468,18 @@ cdef class OrderMatchingEngine:
             if order.is_closed_c():
                 self._cached_filled_qty.pop(order.client_order_id, None)
                 continue
+
+            # Check fill model for potential matches (including off-market)
+            if (
+                self._fill_model is not None
+                and order.order_type == OrderType.LIMIT
+                and not self._core.is_limit_matched(order.side, order.price)
+            ):
+                order.liquidity_side = LiquiditySide.MAKER
+                self.fill_limit_order(order)
+                if order.is_closed_c():
+                    self._cached_filled_qty.pop(order.client_order_id, None)
+                    continue
 
             # Check expiry
             if self._support_gtd_orders:

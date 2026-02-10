@@ -731,8 +731,7 @@ impl ExecutionClient for BitmexExecutionClient {
         let submit_tries = cmd
             .params
             .as_ref()
-            .and_then(|params| params.get("submit_tries"))
-            .and_then(|s| s.parse::<usize>().ok())
+            .and_then(|p| p.get_usize("submit_tries"))
             .filter(|&n| n > 0);
 
         let order = self
@@ -756,8 +755,7 @@ impl ExecutionClient for BitmexExecutionClient {
         let submit_tries = cmd
             .params
             .as_ref()
-            .and_then(|params| params.get("submit_tries"))
-            .and_then(|s| s.parse::<usize>().ok())
+            .and_then(|p| p.get_usize("submit_tries"))
             .filter(|&n| n > 0);
 
         let orders = self.core.get_orders_for_list(&cmd.order_list)?;

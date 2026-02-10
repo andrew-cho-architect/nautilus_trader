@@ -617,7 +617,7 @@ mod tests {
         }
         fn calculate_balance_locked(
             &mut self,
-            _: InstrumentAny,
+            _: &InstrumentAny,
             _: OrderSide,
             _: Quantity,
             _: Price,
@@ -627,15 +627,15 @@ mod tests {
         }
         fn calculate_pnls(
             &self,
-            _: InstrumentAny,
-            _: OrderFilled,
+            _: &InstrumentAny,
+            _: &OrderFilled,
             _: Option<Position>,
         ) -> Result<Vec<Money>, anyhow::Error> {
             todo!()
         }
         fn calculate_commission(
             &self,
-            _: InstrumentAny,
+            _: &InstrumentAny,
             _: Quantity,
             _: Price,
             _: LiquiditySide,

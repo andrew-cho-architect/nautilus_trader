@@ -20,14 +20,19 @@ use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
 use derive_builder::Builder;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    data::greeks::{GreeksData, PortfolioGreeks, black_scholes_greeks, imply_vol_and_greeks},
     enums::{InstrumentClass, OptionKind, PositionSide, PriceType},
     identifiers::{InstrumentId, StrategyId, Venue},
     instruments::Instrument,
     position::Position,
 };
 
-use crate::{cache::Cache, clock::Clock, msgbus, msgbus::TypedHandler};
+use crate::{
+    cache::Cache,
+    clock::Clock,
+    greeks::data::{GreeksData, PortfolioGreeks, black_scholes_greeks, imply_vol_and_greeks},
+    msgbus,
+    msgbus::TypedHandler,
+};
 
 /// Type alias for a greeks filter function.
 pub type GreeksFilter = Box<dyn Fn(&GreeksData) -> bool>;
@@ -382,7 +387,7 @@ impl GreeksCalculator {
                 None,
             );
             let mut greeks_data =
-                GreeksData::from_delta(instrument_id, delta, multiplier.as_f64(), ts_event);
+                GreeksData::from_delta_rust(instrument_id, delta, multiplier.as_f64(), ts_event);
 
             if let Some(pos) = position {
                 greeks_data.pnl = multiplier * ((underlying_price + spot_shock) - pos.avg_px_open);
@@ -495,7 +500,7 @@ impl GreeksCalculator {
                 gamma,
                 vega,
                 greeks.theta,
-                (greeks.delta / multiplier.as_f64()).abs(),
+                greeks.itm_prob,
             ));
 
             // Adding greeks to cache if requested
@@ -571,7 +576,7 @@ impl GreeksCalculator {
                 gamma,
                 vega,
                 greeks.theta,
-                (greeks.delta / greeks_data.multiplier).abs(),
+                greeks.itm_prob,
             );
         }
 
@@ -1173,7 +1178,7 @@ mod tests {
         let filter = GreeksFilterCallback::from_fn(filter_positive_delta);
 
         // Create test data
-        let greeks_data = GreeksData::from_delta(
+        let greeks_data = GreeksData::from_delta_rust(
             InstrumentId::from("TEST.NASDAQ"),
             0.5,
             1.0,
@@ -1195,7 +1200,7 @@ mod tests {
             GreeksFilterCallback::from_closure(move |data: &GreeksData| data.delta > min_delta);
 
         // Create test data
-        let greeks_data = GreeksData::from_delta(
+        let greeks_data = GreeksData::from_delta_rust(
             InstrumentId::from("TEST.NASDAQ"),
             0.5,
             1.0,
@@ -1218,7 +1223,7 @@ mod tests {
         let filter1 = GreeksFilterCallback::from_fn(filter_fn);
         let filter2 = filter1.clone();
 
-        let greeks_data = GreeksData::from_delta(
+        let greeks_data = GreeksData::from_delta_rust(
             InstrumentId::from("TEST.NASDAQ"),
             0.5,
             1.0,
@@ -1247,7 +1252,7 @@ mod tests {
         assert_eq!(params.flat_interest_rate, 0.05);
 
         // Test that the filter can be called
-        let greeks_data = GreeksData::from_delta(
+        let greeks_data = GreeksData::from_delta_rust(
             InstrumentId::from("TEST.NASDAQ"),
             0.5,
             1.0,
@@ -1285,7 +1290,7 @@ mod tests {
         let callback = GreeksFilterCallback::from_fn(filter_fn);
         let greeks_filter = callback.to_greeks_filter();
 
-        let greeks_data = GreeksData::from_delta(
+        let greeks_data = GreeksData::from_delta_rust(
             InstrumentId::from("TEST.NASDAQ"),
             0.5,
             1.0,

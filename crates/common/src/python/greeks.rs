@@ -13,14 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Python bindings for Greeks (Black-Scholes result and functions).
+
 use pyo3::prelude::*;
 
-use crate::data::greeks::{
+use crate::greeks::data::{
     BlackScholesGreeksResult, black_scholes_greeks, imply_vol, imply_vol_and_greeks,
     refine_vol_and_greeks,
 };
 
-#[cfg(feature = "python")]
 #[pymethods]
 impl BlackScholesGreeksResult {
     #[getter]
@@ -98,8 +99,7 @@ pub fn py_imply_vol(
     t: f64,
     price: f64,
 ) -> PyResult<f64> {
-    let vol = imply_vol(s, r, b, is_call, k, t, price);
-    Ok(vol)
+    Ok(imply_vol(s, r, b, is_call, k, t, price))
 }
 
 /// Computes implied volatility and option greeks for given parameters and market price.

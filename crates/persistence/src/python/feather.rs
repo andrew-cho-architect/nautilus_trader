@@ -28,8 +28,8 @@ use nautilus_common::{
 };
 use nautilus_core::UnixNanos;
 use nautilus_model::data::{
-    Bar, Data, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick,
-    TradeTick, close::InstrumentClose,
+    Bar, CustomData, Data, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10,
+    QuoteTick, TradeTick, close::InstrumentClose,
 };
 use pyo3::{exceptions::PyIOError, prelude::*};
 
@@ -240,9 +240,11 @@ impl StreamingFeatherWriterV2 {
             Data::MarkPriceUpdate(price)
         } else if let Ok(close) = data.extract::<InstrumentClose>(py) {
             Data::InstrumentClose(close)
+        } else if let Ok(custom) = data.extract::<CustomData>(py) {
+            Data::Custom(custom)
         } else {
             return Err(PyIOError::new_err(
-                "Unsupported data type. Must be one of: QuoteTick, TradeTick, Bar, OrderBookDelta, OrderBookDepth10, IndexPriceUpdate, MarkPriceUpdate, InstrumentClose",
+                "Unsupported data type. Must be one of: QuoteTick, TradeTick, Bar, OrderBookDelta, OrderBookDepth10, IndexPriceUpdate, MarkPriceUpdate, InstrumentClose, CustomData",
             ));
         };
 
